@@ -4,8 +4,11 @@ import { config } from './index';
 export interface DatabaseConfig {
   vectorDb: {
     type: 'chroma' | 'faiss';
-    endpoint: string;
+    endpoint?: string;
     collectionName: string;
+    dimension?: number;
+    metric?: 'l2' | 'inner_product' | 'cosine';
+    dataPath?: string;
     timeout?: number;
   };
 }
@@ -109,6 +112,9 @@ export class ConfigurationManager {
           type: config.vectorDb.type as 'chroma' | 'faiss',
           endpoint: config.vectorDb.chromaEndpoint || 'http://localhost:8000',
           collectionName: config.vectorDb.collectionName || 'research_memory',
+          dimension: config.vectorDb.dimension || this.getEmbeddingDimensions(),
+          metric: (config.vectorDb.metric as 'l2' | 'inner_product' | 'cosine') || 'l2',
+          dataPath: config.vectorDb.dataPath || './data/faiss',
           timeout: 30000
         }
       },

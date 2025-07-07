@@ -12,6 +12,9 @@ import { MemoryTool } from '../tools/MemoryTool';
 import { PythonExecutorTool } from '../tools/PythonExecutorTool';
 import { PDFParserTool } from '../tools/PDFParserTool';
 
+// Import services
+import { ServiceFactory } from '../services/ServiceFactory';
+
 // Import types
 import { AgentStep } from '../types';
 import { config } from '../config';
@@ -38,7 +41,7 @@ export interface ResearchContext {
 // LangChain Research Agent
 export class LangChainAgentRunner {
   private llm: ChatOpenAI;
-  private tools: Tool[];
+  private tools: Tool[] = [];
   private agent?: AgentExecutor;
   private memory: BaseMessage[] = [];
   
@@ -48,8 +51,15 @@ export class LangChainAgentRunner {
   private memoryTool: MemoryTool | null = null;
   private pythonTool: PythonExecutorTool;
   private pdfTool: PDFParserTool;
+  
+  // Service factory for dependency management
+  private serviceFactory: ServiceFactory;
+  private isInitialized: boolean = false;
 
   constructor() {
+    // Initialize service factory
+    this.serviceFactory = ServiceFactory.getInstance();
+    
     // Initialize LLM based on configuration
     const llmConfig: any = {
       modelName: config.llm.provider === 'deepseek' ? config.llm.deepseekModel : config.llm.openaiModel,
@@ -78,9 +88,6 @@ export class LangChainAgentRunner {
       userAgent: config.tools.scraper.userAgent,
     });
 
-    // TODO: Initialize MemoryTool with proper dependencies
-    // this.memoryTool = new MemoryTool(vectorService, embeddingService);
-
     this.pythonTool = new PythonExecutorTool({
       timeout: 30000,
       sandboxed: true,
@@ -92,8 +99,35 @@ export class LangChainAgentRunner {
       timeout: 30000,
     });
 
-    // Convert tools to LangChain format
-    this.tools = this.createLangChainTools();
+    // Initialize MemoryTool asynchronously in the init method
+    this.initializeAsync();
+  }
+
+  private async initializeAsync(): Promise<void> {
+    try {
+      // Initialize service factory if not already done
+      if (!this.serviceFactory.isServiceInitialized()) {
+        console.log('🔧 Initializing service factory for LangChain agent...');
+        await this.serviceFactory.initialize();
+      }
+
+      // Initialize MemoryTool with proper dependencies
+      console.log('🧠 Initializing MemoryTool with vector and embedding services...');
+      this.memoryTool = await this.serviceFactory.createMemoryTool();
+
+      // Recreate tools with memory tool now available
+      this.tools = this.createLangChainTools();
+      
+      this.isInitialized = true;
+      console.log('✅ LangChain agent runner initialization complete');
+
+    } catch (error) {
+      console.error('❌ Failed to initialize MemoryTool:', error);
+      console.warn('⚠️  LangChain agent will run without memory capabilities');
+      this.memoryTool = null;
+      this.tools = this.createLangChainTools();
+      this.isInitialized = true;
+    }
   }
 
   private createLangChainTools(): Tool[] {
@@ -198,6 +232,20 @@ export class LangChainAgentRunner {
 
   private async initializeAgent(): Promise<void> {
     if (this.agent) return;
+
+    // Ensure async initialization is complete
+    if (!this.isInitialized) {
+      console.log('⏳ Waiting for async initialization to complete...');
+      let attempts = 0;
+      while (!this.isInitialized && attempts < 30) { // Wait up to 15 seconds
+        await new Promise(resolve => setTimeout(resolve, 500));
+        attempts++;
+      }
+      
+      if (!this.isInitialized) {
+        console.warn('⚠️  Async initialization did not complete, proceeding without full initialization');
+      }
+    }
 
     // Create the research agent prompt
     const prompt = ChatPromptTemplate.fromMessages([

@@ -25,20 +25,23 @@ export interface LLMProvider {
 export interface VectorSearchResult {
   id: string;
   content: string;
-  metadata: Record<string, any>;
-  similarity: number;
+  source?: string;
+  type?: string;
+  timestamp?: string;
+  relevanceScore: number;
+  distance?: number;
+  metadata?: Record<string, any>;
 }
 
 export interface MemoryChunk {
-  id: string;
+  id?: string;
   content: string;
-  embedding: number[];
-  metadata: {
-    source: string;
-    timestamp: Date;
-    type: string;
-    [key: string]: any;
-  };
+  embedding?: number[];
+  source?: string;
+  type?: string;
+  timestamp?: string;
+  relevanceScore?: number;
+  metadata?: Record<string, any>;
 }
 
 export interface WebSearchResult {
@@ -73,6 +76,10 @@ export interface AgentConfig {
     type: 'chroma' | 'faiss';
     endpoint?: string | undefined;
     collectionName: string;
+    dimension?: number;
+    metric?: 'l2' | 'inner_product' | 'cosine';
+    dataPath?: string;
+    timeout?: number;
   };
   tools: {
     webSearch: {

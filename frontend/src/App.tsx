@@ -94,6 +94,24 @@ const Title = styled.h1`
   color: #333333;
 `;
 
+const Footer = styled.footer`
+  background: #f8f9fa;
+  border-top: 1px solid #e5e5e5;
+  padding: 8px 24px;
+  text-align: center;
+  font-size: 12px;
+  color: #666;
+  
+  a {
+    color: #dc2626;
+    text-decoration: none;
+    
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+`;
+
 const ModeToggle = styled.div`
   display: flex;
   background: #f7f7f8;
@@ -1884,6 +1902,17 @@ function App() {
             </form>
           </InputSection>
         </ChatContainer>
+        
+        <Footer>
+          Developed by{' '}
+          <a href="https://www.linkedin.com/in/yadidya-medepalli/" target="_blank" rel="noopener noreferrer">
+            Yadidya Medepalli
+          </a>
+          {' & '}
+          <a href="https://www.linkedin.com/in/monicajayakumar/" target="_blank" rel="noopener noreferrer">
+            Monia Jayakumar
+          </a>
+        </Footer>
       </MainContent>
     </AppContainer>
   );

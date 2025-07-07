@@ -2,6 +2,18 @@
 
 This project implements a research agent that combines Ollama's local LLM capabilities with HuggingFace's API for advanced AI research tasks.
 
+## 👥 Developers
+
+**Developed by:**
+
+- **Yadidya Medepalli**
+  - LinkedIn: [@yadidya-medepalli](https://www.linkedin.com/in/yadidya-medepalli/)
+  - GitHub: [@YadidyaM](https://github.com/YadidyaM)
+
+- **Monia Jayakumar**
+  - LinkedIn: [@monicajayakumar](https://www.linkedin.com/in/monicajayakumar/)
+  - GitHub: [@Monica2403](https://github.com/Monica2403)
+
 ## Setup Instructions
 
 1. Install dependencies:

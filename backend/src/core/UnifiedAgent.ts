@@ -250,28 +250,257 @@ export class UnifiedAgent {
       return; // Already using this strategy
     }
 
+    console.log(`🔄 Switching from ${this.config.provider} to ${provider} strategy`);
+
     let oldMemory: any[] = [];
     if (preserveMemory) {
-      oldMemory = this.strategy.getMemory();
+      try {
+        oldMemory = this.strategy.getMemory();
+        console.log(`📥 Captured ${oldMemory.length} memory items for transfer`);
+      } catch (error) {
+        console.warn('⚠️  Failed to capture memory from current strategy:', error);
+      }
     }
 
-    // Cleanup current strategy
-    await this.strategy.cleanup();
+    // Store current strategy for cleanup
+    const oldStrategy = this.strategy;
 
     // Create new strategy
     this.strategy = this.createStrategy(provider);
     this.config.provider = provider;
 
-    // Initialize new strategy
-    await this.strategy.initialize();
+    try {
+      // Initialize new strategy
+      await this.strategy.initialize();
 
-    // Restore memory if requested (note: this might not work perfectly across strategies)
-    if (preserveMemory && oldMemory.length > 0) {
-      // TODO: Implement cross-strategy memory transfer
-      console.warn('Memory transfer between strategies not fully implemented');
+      // Implement cross-strategy memory transfer
+      if (preserveMemory && oldMemory.length > 0) {
+        await this.transferMemoryBetweenStrategies(oldMemory, this.strategy);
+      }
+
+      // Cleanup old strategy after successful transfer
+      await oldStrategy.cleanup();
+
+      console.log(`✅ Successfully switched to ${provider} strategy`);
+    } catch (error) {
+      console.error(`❌ Failed to switch to ${provider} strategy:`, error);
+      
+      // Rollback: restore old strategy
+      this.strategy = oldStrategy;
+      this.config.provider = oldStrategy.getCurrentStrategy ? oldStrategy.getCurrentStrategy() : this.config.provider;
+      
+      throw new Error(`Strategy switch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Transfer memory between different agent strategies
+   * Handles conversion between different memory formats
+   */
+  private async transferMemoryBetweenStrategies(
+    oldMemory: any[],
+    newStrategy: AgentStrategy
+  ): Promise<void> {
+    if (!oldMemory || oldMemory.length === 0) {
+      console.log('📝 No memory to transfer');
+      return;
     }
 
-    console.log(`Successfully switched to ${provider} strategy`);
+    try {
+      console.log(`🔄 Transferring ${oldMemory.length} memory items to new strategy...`);
+      
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (const memoryItem of oldMemory) {
+        try {
+          // Convert memory item to a standard format
+          const standardizedMemory = this.standardizeMemoryItem(memoryItem);
+          
+          // Load into new strategy
+          await this.loadMemoryIntoStrategy(standardizedMemory, newStrategy);
+          successCount++;
+          
+        } catch (error) {
+          console.warn('⚠️  Failed to transfer memory item:', error);
+          failureCount++;
+        }
+      }
+
+      console.log(`📊 Memory transfer complete: ${successCount} successful, ${failureCount} failed`);
+
+      if (failureCount > 0) {
+        console.warn(`⚠️  ${failureCount} memory items could not be transferred`);
+      }
+
+    } catch (error) {
+      console.error('❌ Memory transfer failed:', error);
+      throw new Error(`Memory transfer failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Standardize memory items to a common format for cross-strategy compatibility
+   */
+  private standardizeMemoryItem(memoryItem: any): any {
+    // Handle LangChain BaseMessage format
+    if (memoryItem && typeof memoryItem === 'object' && memoryItem.content) {
+      return {
+        type: 'message',
+        content: memoryItem.content,
+        role: memoryItem._getType ? memoryItem._getType() : 'unknown',
+        timestamp: memoryItem.timestamp || new Date().toISOString(),
+        metadata: memoryItem.additional_kwargs || {}
+      };
+    }
+
+    // Handle string messages
+    if (typeof memoryItem === 'string') {
+      return {
+        type: 'message',
+        content: memoryItem,
+        role: 'user',
+        timestamp: new Date().toISOString(),
+        metadata: {}
+      };
+    }
+
+    // Handle structured memory objects
+    if (memoryItem && typeof memoryItem === 'object') {
+      return {
+        type: 'structured',
+        content: memoryItem.content || JSON.stringify(memoryItem),
+        role: memoryItem.role || 'system',
+        timestamp: memoryItem.timestamp || new Date().toISOString(),
+        metadata: memoryItem.metadata || memoryItem
+      };
+    }
+
+    // Fallback for unknown formats
+    return {
+      type: 'unknown',
+      content: String(memoryItem),
+      role: 'system',
+      timestamp: new Date().toISOString(),
+      metadata: {}
+    };
+  }
+
+  /**
+   * Load standardized memory into the new strategy
+   */
+  private async loadMemoryIntoStrategy(
+    standardizedMemory: any,
+    strategy: AgentStrategy
+  ): Promise<void> {
+    try {
+      // Check if strategy has a specific memory loading method
+      if (typeof (strategy as any).loadMemoryItem === 'function') {
+        await (strategy as any).loadMemoryItem(standardizedMemory);
+        return;
+      }
+
+      // Try to use generic memory loading
+      if (typeof (strategy as any).addToMemory === 'function') {
+        await (strategy as any).addToMemory(standardizedMemory);
+        return;
+      }
+
+      // Fallback: try to reconstruct memory format for specific strategies
+      const strategyType = strategy.constructor.name;
+      
+      switch (strategyType) {
+        case 'LangChainStrategy':
+          await this.loadIntoLangChainMemory(standardizedMemory, strategy);
+          break;
+          
+        case 'CustomStrategy':
+          await this.loadIntoCustomMemory(standardizedMemory, strategy);
+          break;
+          
+        default:
+          console.warn(`⚠️  Unknown strategy type for memory loading: ${strategyType}`);
+      }
+
+    } catch (error) {
+      console.warn('⚠️  Failed to load memory item into strategy:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Load memory into LangChain strategy format
+   */
+  private async loadIntoLangChainMemory(
+    memory: any,
+    strategy: AgentStrategy
+  ): Promise<void> {
+    try {
+      // Import LangChain message types
+      const { HumanMessage, AIMessage, SystemMessage } = await import('@langchain/core/messages');
+      
+      let message;
+      switch (memory.role) {
+        case 'user':
+        case 'human':
+          message = new HumanMessage(memory.content);
+          break;
+        case 'assistant':
+        case 'ai':
+          message = new AIMessage(memory.content);
+          break;
+        case 'system':
+        default:
+          message = new SystemMessage(memory.content);
+          break;
+      }
+
+      // Add timestamp if available
+      if (memory.timestamp) {
+        (message as any).timestamp = memory.timestamp;
+      }
+
+      // Add to strategy memory
+      const currentMemory = strategy.getMemory() || [];
+      currentMemory.push(message);
+      
+      // Update strategy memory if it has a setMemory method
+      if (typeof (strategy as any).setMemory === 'function') {
+        (strategy as any).setMemory(currentMemory);
+      }
+
+    } catch (error) {
+      console.warn('⚠️  Failed to load into LangChain memory:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Load memory into Custom strategy format
+   */
+  private async loadIntoCustomMemory(
+    memory: any,
+    strategy: AgentStrategy
+  ): Promise<void> {
+    try {
+      // Custom strategy typically uses a simpler format
+      const memoryItem = {
+        content: memory.content,
+        timestamp: memory.timestamp,
+        metadata: memory.metadata
+      };
+
+      const currentMemory = strategy.getMemory() || [];
+      currentMemory.push(memoryItem);
+      
+      if (typeof (strategy as any).setMemory === 'function') {
+        (strategy as any).setMemory(currentMemory);
+      }
+
+    } catch (error) {
+      console.warn('⚠️  Failed to load into Custom memory:', error);
+      throw error;
+    }
   }
 
   getCurrentStrategy(): string {

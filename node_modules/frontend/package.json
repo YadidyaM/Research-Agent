@@ -28,6 +28,17 @@
     "eject": "react-scripts eject"
   },
   "proxy": "http://localhost:3001",
+  "author": "Yadidya Medepalli <https://www.linkedin.com/in/yadidya-medepalli/>, Monia Jayakumar <https://www.linkedin.com/in/monicajayakumar/>",
+  "contributors": [
+    {
+      "name": "Yadidya Medepalli",
+      "url": "https://github.com/YadidyaM"
+    },
+    {
+      "name": "Monia Jayakumar",
+      "url": "https://github.com/Monica2403"
+    }
+  ],
   "eslintConfig": {
     "extends": [
       "react-app",

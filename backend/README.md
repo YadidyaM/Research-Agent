@@ -2,6 +2,18 @@
 
 A powerful, autonomous AI research agent built with TypeScript, featuring LLM integration, vector memory, and advanced toolchain capabilities.
 
+## 👥 Developers
+
+**Developed by:**
+
+- **Yadidya Medepalli**
+  - LinkedIn: [@yadidya-medepalli](https://www.linkedin.com/in/yadidya-medepalli/)
+  - GitHub: [@YadidyaM](https://github.com/YadidyaM)
+
+- **Monia Jayakumar**
+  - LinkedIn: [@monicajayakumar](https://www.linkedin.com/in/monicajayakumar/)
+  - GitHub: [@Monica2403](https://github.com/Monica2403)
+
 ## 🚀 Features
 
 - **Multi-LLM Support**: Ollama, OpenAI, HuggingFace

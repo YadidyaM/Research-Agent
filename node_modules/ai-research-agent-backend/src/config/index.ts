@@ -25,6 +25,10 @@ export const config = {
     type: process.env.VECTOR_DB_TYPE || 'chroma',
     chromaEndpoint: process.env.CHROMA_ENDPOINT || 'http://localhost:8000',
     collectionName: process.env.COLLECTION_NAME || 'research_agent_memory',
+    // FAISS-specific configuration
+    dimension: process.env.VECTOR_DB_DIMENSION ? parseInt(process.env.VECTOR_DB_DIMENSION) : undefined,
+    metric: process.env.VECTOR_DB_METRIC || 'l2',
+    dataPath: process.env.VECTOR_DB_DATA_PATH || './data/faiss',
   },
   
   // Tools Configuration
@@ -98,6 +102,9 @@ export const getAgentConfig = (): AgentConfig => {
       type: config.vectorDb.type as 'chroma' | 'faiss',
       ...(config.vectorDb.chromaEndpoint && { endpoint: config.vectorDb.chromaEndpoint }),
       collectionName: config.vectorDb.collectionName,
+      ...(config.vectorDb.dimension && { dimension: config.vectorDb.dimension }),
+      ...(config.vectorDb.metric && { metric: config.vectorDb.metric }),
+      ...(config.vectorDb.dataPath && { dataPath: config.vectorDb.dataPath }),
     },
     tools: {
       webSearch: {

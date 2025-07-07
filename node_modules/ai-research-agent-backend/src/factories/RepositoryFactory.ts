@@ -1,6 +1,7 @@
 import { IVectorRepository } from '../interfaces/repositories/IVectorRepository';
 import { IEmbeddingRepository } from '../interfaces/repositories/IEmbeddingRepository';
 import { ChromaVectorRepository } from '../repositories/ChromaVectorRepository';
+import { FaissVectorRepository } from '../repositories/FaissVectorRepository';
 import { HuggingFaceEmbeddingRepository } from '../repositories/HuggingFaceEmbeddingRepository';
 import { ConfigurationManager } from '../config/ConfigurationManager';
 
@@ -42,8 +43,7 @@ export class RepositoryFactory {
       case 'chroma':
         return new ChromaVectorRepository();
       case 'faiss':
-        // TODO: Implement FAISS repository
-        throw new Error('FAISS repository not yet implemented');
+        return new FaissVectorRepository();
       default:
         throw new Error(`Unsupported vector database type: ${config.vectorDb.type}`);
     }
