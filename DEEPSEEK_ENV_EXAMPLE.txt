@@ -1,0 +1,61 @@
+# ==============================================================================
+# AI RESEARCH AGENT - DEEPSEEK INTEGRATION
+# ==============================================================================
+
+# SERVER CONFIGURATION
+PORT=3001
+NODE_ENV=development
+CORS_ORIGIN=http://localhost:3000
+
+# 🏆 DEEPSEEK CONFIGURATION (Primary LLM - Recommended)
+LLM_PROVIDER=deepseek
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-reasoner
+
+# 📋 Available DeepSeek Models:
+# - deepseek-reasoner (DeepSeek-R1-0528) - Best for reasoning tasks
+# - deepseek-chat (DeepSeek-V3-0324) - General chat and tasks
+
+# FALLBACK LLM OPTIONS (Optional)
+# OPENAI_API_KEY=your_openai_api_key_here
+# OPENAI_MODEL=gpt-3.5-turbo
+
+# HUGGINGFACE CONFIGURATION (for embeddings)
+HUGGINGFACE_API_KEY=your_huggingface_api_key_here
+
+# VECTOR DATABASE
+VECTOR_DB_TYPE=chroma
+CHROMA_ENDPOINT=http://localhost:8000
+COLLECTION_NAME=research_agent_memory
+
+# EMBEDDING SERVICE
+EMBEDDING_PROVIDER=huggingface
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+
+# WEB SEARCH (tavily recommended)
+WEB_SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=your_tavily_api_key_here
+
+# SCRAPER SETTINGS
+SCRAPER_TIMEOUT=30000
+USER_AGENT=AI Research Agent/1.0
+
+# PYTHON EXECUTOR
+PYTHON_SANDBOXED=true
+PYTHON_TIMEOUT=30000
+PYTHON_EXECUTOR_ENDPOINT=http://localhost:5000
+
+# RATE LIMITING
+RATE_LIMIT_WINDOW=900000
+RATE_LIMIT_MAX=100
+
+# ==============================================================================
+# SETUP INSTRUCTIONS:
+# 1. Copy this content to your .env file
+# 2. Get your DeepSeek API key from https://platform.deepseek.com
+# 3. Replace 'your_deepseek_api_key_here' with your actual API key
+# 4. Get your Tavily API key from https://tavily.com
+# 5. Replace 'your_tavily_api_key_here' with your actual API key
+# 6. Run: npm run dev
+# ============================================================================== 
