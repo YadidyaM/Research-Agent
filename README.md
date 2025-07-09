@@ -1,7 +1,7 @@
 # AI Research Agent
 
 <p align="center">
-  <img src="https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3M3kzMWJtcWQ2NmwyZWQ0cjEyMTJvOXpua3Zuc2h6dWJvNXg4NGFyMCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/yJIcZu1U4DNR9UGk1f/giphy.gif" alt="Research Agent GIF" />
+  <img src="https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3M3kzMWJtcWQ2NmwyZWQ0cjEyMTJvOXpua3Zuc2h6dWJvNXg4NGFyMCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/yJIcZu1U4DNR9UGk1f/giphy.gif" alt="Research Agent GIF" width="300" />
 </p>
 
 ## 🌟 SITUATION
@@ -35,7 +35,11 @@ This results in repetitive manual work and inefficient knowledge discovery.
 ## ⚙️ ACTION
 
 **Technical Architecture**
-<a href="https://ibb.co/8DwbzTYW"><img src="https://i.ibb.co/zhgF8j6y/Screenshot-2025-07-09-165224.png" alt="Screenshot-2025-07-09-165224" border="0"></a>
+<p align="center">
+  <a href="https://ibb.co/8DwbzTYW">
+    <img src="https://i.ibb.co/zhgF8j6y/Screenshot-2025-07-09-165224.png" alt="Architecture Diagram" border="0" />
+  </a>
+</p>
 
 **1. Multi-Strategy Agent System**
 A unified agent automatically selects the optimal reasoning strategy and falls back on alternatives when needed, ensuring resilient and intelligent execution.
