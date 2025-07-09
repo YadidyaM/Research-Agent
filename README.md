@@ -35,7 +35,12 @@ This results in repetitive manual work and inefficient knowledge discovery.
 ## ⚙️ ACTION
 
 **Technical Architecture**
-<a href="https://ibb.co/s9H1zTbV"><img src="https://i.ibb.co/yFSk7zdQ/2f936b50-e9c0-49c7-abdf-b57ff0459886.png" alt="2f936b50-e9c0-49c7-abdf-b57ff0459886" border="0"></a>
+<p align="center">
+  <a href="https://ibb.co/s9H1zTbV">
+    <img src="https://i.ibb.co/yFSk7zdQ/2f936b50-e9c0-49c7-abdf-b57ff0459886.png" alt="2f936b50-e9c0-49c7-abdf-b57ff0459886" border="0" />
+  </a>
+</p>
+
 **1. Multi-Strategy Agent System**
 A unified agent automatically selects the optimal reasoning strategy and falls back on alternatives when needed, ensuring resilient and intelligent execution.
 
