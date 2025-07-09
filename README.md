@@ -40,7 +40,6 @@ This results in repetitive manual work and inefficient knowledge discovery.
     <img src="https://i.ibb.co/zhgF8j6y/Screenshot-2025-07-09-165224.png" alt="Architecture Diagram" border="0" />
   </a>
 </p>
-
 **1. Multi-Strategy Agent System**
 A unified agent automatically selects the optimal reasoning strategy and falls back on alternatives when needed, ensuring resilient and intelligent execution.
 
