@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
+import Auth0ProviderWrapper from './components/Auth0Provider';
 import reportWebVitals from './reportWebVitals';
 
 const root = ReactDOM.createRoot(
@@ -9,7 +10,9 @@ const root = ReactDOM.createRoot(
 );
 root.render(
   <React.StrictMode>
-    <App />
+    <Auth0ProviderWrapper>
+      <App />
+    </Auth0ProviderWrapper>
   </React.StrictMode>
 );
 

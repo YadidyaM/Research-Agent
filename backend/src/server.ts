@@ -8,6 +8,11 @@ import { AgentOrchestrator } from './core/AgentOrchestrator';
 import { AgentStep } from './types';
 import { LLMService } from './services/llm.service';
 import { ServiceFactory } from './services/ServiceFactory';
+import { ConversationService } from './services/ConversationService';
+import { MongoDBService } from './services/MongoDBService';
+import { Chat, Message, User, ResearchResult, AgentTask } from './models';
+import userRoutes from './routes/user';
+import paymentRoutes from './routes/payment';
 
 const app = express();
 
@@ -26,19 +31,28 @@ const orchestrator = new AgentOrchestrator({
   enableFallback: true
 });
 
+// Initialize conversation service
+const llmService = new LLMService();
+const conversationService = new ConversationService(llmService);
+
+// Register API routes
+app.use('/api/user', userRoutes);
+app.use('/api/payment', paymentRoutes);
+
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
   try {
     const researchHealth = await researchAgent.health();
     const chatHealth = await chatAgent.health();
     const orchestratorHealth = orchestrator.getPerformanceMetrics();
-    
+    const mongoService = MongoDBService.getInstance();
     res.json({ 
       status: 'ok',
       services: {
         llm: config.llm.provider,
         vectorDb: config.vectorDb.type,
-        embedding: config.embedding.provider
+        embedding: config.embedding.provider,
+        mongodb: mongoService.getConnectionStatus()
       },
       agents: {
         research: researchHealth,
@@ -46,6 +60,7 @@ app.get('/api/health', async (req, res) => {
         orchestrator: orchestratorHealth
       }
     });
+    
   } catch (error) {
     res.status(500).json({
       status: 'error',
@@ -851,42 +866,643 @@ app.post('/api/orchestrator/analyze', async (req, res) => {
   }
 });
 
-// Start server
-const port = config.port;
-app.listen(port, () => {
-  console.log(`🚀 AI Research Agent Server running on port ${port}`);
-  console.log('📊 Configuration:', {
-    environment: config.nodeEnv,
-    llmProvider: config.llm.provider,
-    vectorDb: config.vectorDb.type,
-    embedding: config.embedding.provider
-  });
-  console.log('🧠 Unified Agent Architecture initialized:');
-  console.log('   - Research Agent (LangChain Strategy)');
-  console.log('   - Chat Agent (Custom Strategy)');
-  console.log('   - Auto-fallback enabled');
-  console.log('   - Available tools: Web Search, Scraping, Memory, Python, PDF');
-  console.log('   - Strategy switching supported');
-  console.log('🔗 Endpoints:');
-  console.log('   - POST /api/chat - Basic chat');
-  console.log('   - POST /api/research - Research with streaming');
-  console.log('   - GET /api/health - Health check');
-  console.log('   - POST /api/agent/clear-memory - Clear agent memory');
-  console.log('   - GET /api/agent/memory - Get agent memory');
-  console.log('   - POST /api/memory/store - Store information in memory');
-  console.log('   - POST /api/memory/search - Search memory');
-  console.log('   - GET /api/memory/insights - Get memory insights');
-  console.log('   - POST /api/memory/optimize - Optimize memory storage');
-  console.log('   - GET /api/cache/stats - Get cache statistics');
-  console.log('   - GET /api/cache/info - Get cache information');
-  console.log('   - GET /api/cache/health - Check cache health');
-  console.log('   - POST /api/cache/clear - Clear cache');
-  console.log('   - POST /api/cache/invalidate - Invalidate cache by pattern/tag');
-  console.log('   - POST /api/cache/warmup - Warm up cache');
-  console.log('   - GET /api/orchestrator/agents - Get all agents and their status');
-  console.log('   - GET /api/orchestrator/agents/:agentId - Get specific agent details');
-  console.log('   - POST /api/orchestrator/agents/:agentId/:action - Activate/deactivate agent');
-  console.log('   - GET /api/orchestrator/metrics - Get orchestrator performance metrics');
-  console.log('   - POST /api/orchestrator/collaborate - Multi-agent collaboration');
-  console.log('   - POST /api/orchestrator/analyze - Smart routing');
-}); 
+// NEW: Streaming Chat Endpoints
+app.post('/api/chat/stream', async (req, res) => {
+  try {
+    const { message, conversationId, settings } = req.body;
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    // Set up Server-Sent Events for streaming
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control, Content-Type',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS'
+    });
+
+    try {
+      let conversation;
+      if (conversationId) {
+        conversation = await conversationService.getConversation(conversationId, 'default-user');
+        if (!conversation) {
+          throw new Error('Conversation not found');
+        }
+      } else {
+        // Create new conversation
+        conversation = await conversationService.createConversation({
+          name: `Chat ${new Date().toLocaleString()}`,
+          userId: 'default-user',
+          settings: settings || {}
+        });
+      }
+
+      // Add user message
+      const userMessage = await conversationService.addMessage(conversation.id, {
+        role: 'user',
+        content: message,
+        type: 'user'
+      });
+
+      // Send user message event
+      res.write(`data: ${JSON.stringify({ 
+        type: 'user_message', 
+        data: userMessage,
+        conversationId: conversation.id
+      })}\n\n`);
+
+      // Stream assistant response
+      const messageStream = conversationService.streamMessage(conversation.id, {
+        role: 'assistant',
+        content: message,
+        type: 'assistant'
+      });
+
+      for await (const chunk of messageStream) {
+        res.write(`data: ${JSON.stringify({ 
+          type: 'assistant_message', 
+          data: chunk,
+          conversationId: conversation.id
+        })}\n\n`);
+
+        if (chunk.status === 'completed') {
+          break;
+        }
+      }
+
+      res.write(`data: ${JSON.stringify({ type: 'end' })}\n\n`);
+      res.end();
+    } catch (error) {
+      res.write(`data: ${JSON.stringify({ 
+        type: 'error', 
+        data: { 
+          error: 'Streaming chat failed',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
+      })}\n\n`);
+      res.end();
+    }
+  } catch (error) {
+    console.error('Stream chat error:', error);
+    res.status(500).json({ 
+      error: 'Streaming chat failed',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// NEW: Conversation Management Endpoints
+app.post('/api/conversations', async (req, res) => {
+  try {
+    const { name, description, tags, settings } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Conversation name is required' });
+    }
+
+    const conversation = await conversationService.createConversation({
+      name,
+      description,
+      userId: 'default-user',
+      tags: tags || [],
+      settings: settings || {}
+    });
+
+    res.json(conversation);
+  } catch (error) {
+    console.error('Create conversation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to create conversation',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.get('/api/conversations', async (req, res) => {
+  try {
+    const { 
+      query, 
+      tags, 
+      archived, 
+      limit = 20, 
+      offset = 0,
+      sortBy = 'updated_at',
+      sortOrder = 'desc'
+    } = req.query;
+
+    const searchQuery = {
+      userId: 'default-user',
+      query: query as string,
+      tags: tags ? (tags as string).split(',') : undefined,
+      isArchived: archived === 'true',
+      limit: parseInt(limit as string),
+      offset: parseInt(offset as string),
+      sortBy: sortBy as any,
+      sortOrder: sortOrder as any
+    };
+
+    const result = await conversationService.searchConversations(searchQuery);
+    res.json(result);
+  } catch (error) {
+    console.error('Get conversations error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get conversations',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.get('/api/conversations/recent', async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+    const conversations = await conversationService.getRecentConversations(
+      'default-user', 
+      parseInt(limit as string)
+    );
+    res.json(conversations);
+  } catch (error) {
+    console.error('Get recent conversations error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get recent conversations',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.get('/api/conversations/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const conversation = await conversationService.getConversation(id, 'default-user');
+    
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    res.json(conversation);
+  } catch (error) {
+    console.error('Get conversation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get conversation',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.put('/api/conversations/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const conversation = await conversationService.updateConversation(id, 'default-user', updates);
+    res.json(conversation);
+  } catch (error) {
+    console.error('Update conversation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to update conversation',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.delete('/api/conversations/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const success = await conversationService.deleteConversation(id, 'default-user');
+    
+    if (!success) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete conversation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete conversation',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.post('/api/conversations/:id/archive', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const success = await conversationService.archiveConversation(id, 'default-user');
+    
+    if (!success) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Archive conversation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to archive conversation',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.post('/api/conversations/:id/restore', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const success = await conversationService.restoreConversation(id, 'default-user');
+    
+    if (!success) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Restore conversation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to restore conversation',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Message management endpoints
+app.get('/api/conversations/:id/messages', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { limit, offset, includeMetadata } = req.query;
+
+    const options = {
+      limit: limit ? parseInt(limit as string) : undefined,
+      offset: offset ? parseInt(offset as string) : undefined,
+      includeMetadata: includeMetadata === 'true'
+    };
+
+    const messages = await conversationService.getMessages(id, 'default-user', options);
+    res.json(messages);
+  } catch (error) {
+    console.error('Get messages error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get messages',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.post('/api/conversations/:id/messages', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role, content, type, metadata } = req.body;
+
+    if (!role || !content) {
+      return res.status(400).json({ error: 'Role and content are required' });
+    }
+
+    const message = await conversationService.addMessage(id, {
+      role,
+      content,
+      type,
+      metadata
+    });
+
+    res.json(message);
+  } catch (error) {
+    console.error('Add message error:', error);
+    res.status(500).json({ 
+      error: 'Failed to add message',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.post('/api/conversations/:id/messages/search', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { query } = req.body;
+
+    if (!query) {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    const messages = await conversationService.searchMessages(id, query, 'default-user');
+    res.json(messages);
+  } catch (error) {
+    console.error('Search messages error:', error);
+    res.status(500).json({ 
+      error: 'Failed to search messages',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Context management endpoints
+app.post('/api/conversations/:id/context', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type, content, priority, expiresAt, metadata } = req.body;
+
+    if (!type || !content) {
+      return res.status(400).json({ error: 'Type and content are required' });
+    }
+
+    const context = await conversationService.addContext(id, {
+      type,
+      content,
+      priority,
+      expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+      metadata
+    });
+
+    res.json(context);
+  } catch (error) {
+    console.error('Add context error:', error);
+    res.status(500).json({ 
+      error: 'Failed to add context',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.get('/api/conversations/:id/context', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type } = req.query;
+
+    const contexts = await conversationService.getContext(id, type as any);
+    res.json(contexts);
+  } catch (error) {
+    console.error('Get context error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get context',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.post('/api/conversations/:id/context/optimize', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const optimizedContexts = await conversationService.optimizeContext(id);
+    res.json(optimizedContexts);
+  } catch (error) {
+    console.error('Optimize context error:', error);
+    res.status(500).json({ 
+      error: 'Failed to optimize context',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Conversation branching endpoints
+app.post('/api/conversations/:id/branch', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { messageIndex, name, description } = req.body;
+
+    if (messageIndex === undefined || !name) {
+      return res.status(400).json({ error: 'Message index and name are required' });
+    }
+
+    const branch = await conversationService.createBranch(id, messageIndex, {
+      name,
+      description,
+      createdBy: 'default-user'
+    });
+
+    res.json(branch);
+  } catch (error) {
+    console.error('Create branch error:', error);
+    res.status(500).json({ 
+      error: 'Failed to create branch',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.get('/api/conversations/:id/branches', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const branches = await conversationService.getBranches(id);
+    res.json(branches);
+  } catch (error) {
+    console.error('Get branches error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get branches',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.post('/api/conversations/branches/:branchId/switch', async (req, res) => {
+  try {
+    const { branchId } = req.params;
+    const conversation = await conversationService.switchToBranch(branchId, 'default-user');
+    res.json(conversation);
+  } catch (error) {
+    console.error('Switch branch error:', error);
+    res.status(500).json({ 
+      error: 'Failed to switch branch',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Export endpoints
+app.post('/api/conversations/export', async (req, res) => {
+  try {
+    const { conversationIds, format, includeMetadata, includeAttachments } = req.body;
+
+    if (!conversationIds || !Array.isArray(conversationIds) || conversationIds.length === 0) {
+      return res.status(400).json({ error: 'Conversation IDs are required' });
+    }
+
+    const exportResult = await conversationService.exportConversations({
+      conversationIds,
+      format: format || 'json',
+      includeMetadata: includeMetadata !== false,
+      includeAttachments: includeAttachments === true
+    }, 'default-user');
+
+    res.json(exportResult);
+  } catch (error) {
+    console.error('Export conversations error:', error);
+    res.status(500).json({ 
+      error: 'Failed to export conversations',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.get('/api/exports/:exportId/status', async (req, res) => {
+  try {
+    const { exportId } = req.params;
+    const exportResult = await conversationService.getExportStatus(exportId, 'default-user');
+    res.json(exportResult);
+  } catch (error) {
+    console.error('Get export status error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get export status',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.get('/api/exports/:exportId/download', async (req, res) => {
+  try {
+    const { exportId } = req.params;
+    const fileBuffer = await conversationService.downloadExport(exportId, 'default-user');
+    
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="export-${exportId}.json"`);
+    res.send(fileBuffer);
+  } catch (error) {
+    console.error('Download export error:', error);
+    res.status(500).json({ 
+      error: 'Failed to download export',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Settings endpoints
+app.get('/api/conversations/:id/settings', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const settings = await conversationService.getConversationSettings(id, 'default-user');
+    res.json(settings);
+  } catch (error) {
+    console.error('Get conversation settings error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get conversation settings',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.put('/api/conversations/:id/settings', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const settings = await conversationService.updateConversationSettings(id, req.body, 'default-user');
+    res.json(settings);
+  } catch (error) {
+    console.error('Update conversation settings error:', error);
+    res.status(500).json({ 
+      error: 'Failed to update conversation settings',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Analytics endpoints
+app.get('/api/conversations/:id/analytics', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const analytics = await conversationService.getConversationAnalytics(id, 'default-user');
+    res.json(analytics);
+  } catch (error) {
+    console.error('Get conversation analytics error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get conversation analytics',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.get('/api/users/:userId/analytics', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { startDate, endDate } = req.query;
+
+    const dateRange = (startDate && endDate) ? {
+      start: new Date(startDate as string),
+      end: new Date(endDate as string)
+    } : undefined;
+
+    const analytics = await conversationService.getUserAnalytics(userId, dateRange);
+    res.json(analytics);
+  } catch (error) {
+    console.error('Get user analytics error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get user analytics',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Initialize MongoDB and start server
+const startServer = async () => {
+  try {
+    // Connect to MongoDB
+    const mongoService = MongoDBService.getInstance();
+    await mongoService.connect();
+    
+    // Start server
+    const port = config.port;
+    app.listen(port, () => {
+      console.log(`🚀 AI Research Agent Server running on port ${port}`);
+      console.log('📊 Configuration:', {
+        environment: config.nodeEnv,
+        llmProvider: config.llm.provider,
+        vectorDb: config.vectorDb.type,
+        embedding: config.embedding.provider,
+        mongodb: mongoService.getConnectionStatus()
+      });
+      console.log('🧠 Unified Agent Architecture initialized:');
+      console.log('   - Research Agent (LangChain Strategy)');
+      console.log('   - Chat Agent (Custom Strategy)');
+      console.log('   - Auto-fallback enabled');
+      console.log('   - Available tools: Web Search, Scraping, Memory, Python, PDF');
+      console.log('   - Strategy switching supported');
+      console.log('🔗 Endpoints:');
+      console.log('   - POST /api/chat - Basic chat');
+      console.log('   - POST /api/research - Research with streaming');
+      console.log('   - GET /api/health - Health check');
+      console.log('   - POST /api/agent/clear-memory - Clear agent memory');
+      console.log('   - GET /api/agent/memory - Get agent memory');
+      console.log('   - POST /api/memory/store - Store information in memory');
+      console.log('   - POST /api/memory/search - Search memory');
+      console.log('   - GET /api/memory/insights - Get memory insights');
+      console.log('   - POST /api/memory/optimize - Optimize memory storage');
+      console.log('   - GET /api/cache/stats - Get cache statistics');
+      console.log('   - GET /api/cache/info - Get cache information');
+      console.log('   - GET /api/cache/health - Check cache health');
+      console.log('   - POST /api/cache/clear - Clear cache');
+      console.log('   - POST /api/cache/invalidate - Invalidate cache by pattern/tag');
+      console.log('   - POST /api/cache/warmup - Warm up cache');
+      console.log('   - GET /api/orchestrator/agents - Get all agents and their status');
+      console.log('   - GET /api/orchestrator/agents/:agentId - Get specific agent details');
+      console.log('   - POST /api/orchestrator/agents/:agentId/:action - Activate/deactivate agent');
+      console.log('   - GET /api/orchestrator/metrics - Get orchestrator performance metrics');
+      console.log('   - POST /api/orchestrator/collaborate - Multi-agent collaboration');
+      console.log('   - POST /api/orchestrator/analyze - Smart routing');
+      console.log('   - POST /api/chat/stream - Streaming chat');
+      console.log('   - POST /api/conversations - Create a new conversation');
+      console.log('   - GET /api/conversations - Search for conversations');
+      console.log('   - GET /api/conversations/recent - Get recent conversations');
+      console.log('   - GET /api/conversations/:id - Get a specific conversation');
+      console.log('   - PUT /api/conversations/:id - Update a conversation');
+      console.log('   - DELETE /api/conversations/:id - Delete a conversation');
+      console.log('   - POST /api/conversations/:id/archive - Archive a conversation');
+      console.log('   - POST /api/conversations/:id/restore - Restore a conversation');
+      console.log('   - GET /api/conversations/:id/messages - Get messages in a conversation');
+      console.log('   - POST /api/conversations/:id/messages - Add a message to a conversation');
+      console.log('   - POST /api/conversations/:id/messages/search - Search messages in a conversation');
+      console.log('   - POST /api/conversations/:id/context - Add a context to a conversation');
+      console.log('   - GET /api/conversations/:id/context - Get contexts in a conversation');
+      console.log('   - POST /api/conversations/:id/context/optimize - Optimize contexts in a conversation');
+      console.log('   - POST /api/conversations/:id/branch - Create a branch in a conversation');
+      console.log('   - GET /api/conversations/:id/branches - Get branches in a conversation');
+      console.log('   - POST /api/conversations/branches/:branchId/switch - Switch to a branch in a conversation');
+      console.log('   - POST /api/conversations/export - Export conversations');
+      console.log('   - GET /api/exports/:exportId/status - Get export status');
+      console.log('   - GET /api/exports/:exportId/download - Download an exported conversation');
+      console.log('   - GET /api/conversations/:id/settings - Get conversation settings');
+      console.log('   - PUT /api/conversations/:id/settings - Update conversation settings');
+      console.log('   - GET /api/conversations/:id/analytics - Get conversation analytics');
+      console.log('   - GET /api/users/:userId/analytics - Get user analytics');
+    });
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+// Start the server
+startServer();

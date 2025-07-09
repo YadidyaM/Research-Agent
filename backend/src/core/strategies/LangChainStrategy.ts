@@ -36,22 +36,72 @@ export class LangChainStrategy extends AgentStrategy {
   constructor(agentConfig: AgentConfig) {
     super(agentConfig);
     
+    // Get LLM provider configuration (agent-specific or global fallback)
+    const llmProvider = agentConfig.llmProvider || config.llm.provider;
+    const llmModel = agentConfig.llmModel || this.getDefaultModel(llmProvider);
+    const llmApiKey = agentConfig.llmApiKey || this.getDefaultApiKey(llmProvider);
+    const llmEndpoint = agentConfig.llmEndpoint || this.getDefaultEndpoint(llmProvider);
+
     // Initialize LLM based on configuration
     const llmConfig: any = {
-      modelName: config.llm.provider === 'deepseek' ? config.llm.deepseekModel : config.llm.openaiModel,
+      modelName: llmModel,
       temperature: agentConfig.temperature,
-      openAIApiKey: config.llm.provider === 'deepseek' ? config.llm.deepseekApiKey : config.llm.openaiApiKey,
+      openAIApiKey: llmApiKey,
     };
 
-    // Add configuration for DeepSeek
-    if (config.llm.provider === 'deepseek') {
+    // Add configuration for specific providers
+    if (llmProvider === 'deepseek' && llmEndpoint) {
       llmConfig.configuration = {
-        baseURL: config.llm.deepseekBaseUrl,
+        baseURL: llmEndpoint,
+      };
+    } else if (llmProvider === 'ollama' && llmEndpoint) {
+      // For Ollama, we might need different configuration
+      llmConfig.configuration = {
+        baseURL: llmEndpoint,
       };
     }
 
     this.llm = new ChatOpenAI(llmConfig);
     this.initializeTools();
+  }
+
+  private getDefaultModel(provider: string): string {
+    switch (provider) {
+      case 'deepseek':
+        return config.llm.deepseekModel || 'deepseek-reasoner';
+      case 'ollama':
+        return config.llm.ollamaModel || 'llama2';
+      case 'openai':
+        return config.llm.openaiModel || 'gpt-3.5-turbo';
+      default:
+        return config.llm.openaiModel || 'gpt-3.5-turbo';
+    }
+  }
+
+  private getDefaultApiKey(provider: string): string | undefined {
+    switch (provider) {
+      case 'deepseek':
+        return config.llm.deepseekApiKey;
+      case 'openai':
+        return config.llm.openaiApiKey;
+      case 'huggingface':
+        return config.llm.huggingfaceApiKey;
+      case 'ollama':
+        return undefined; // Ollama typically doesn't require API key
+      default:
+        return config.llm.openaiApiKey;
+    }
+  }
+
+  private getDefaultEndpoint(provider: string): string | undefined {
+    switch (provider) {
+      case 'deepseek':
+        return config.llm.deepseekBaseUrl;
+      case 'ollama':
+        return config.llm.ollamaEndpoint;
+      default:
+        return undefined;
+    }
   }
 
   private initializeTools(): void {

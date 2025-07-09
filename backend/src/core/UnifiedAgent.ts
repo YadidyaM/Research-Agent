@@ -9,6 +9,7 @@ export interface UnifiedAgentConfig extends AgentConfig {
   autoFallback?: boolean;
   retryAttempts?: number;
   healthCheckInterval?: number;
+  llmProvider?: 'ollama' | 'deepseek' | 'openai' | 'huggingface';
 }
 
 export class UnifiedAgent {
@@ -557,6 +558,8 @@ export class UnifiedAgent {
       parallelProcessing: true,
       autoFallback: true,
       retryAttempts: 2,
+      // Configure Research Agent to use DeepSeek
+      llmProvider: 'deepseek',
       ...customConfig
     };
 
@@ -574,6 +577,8 @@ export class UnifiedAgent {
       parallelProcessing: false,
       autoFallback: true,
       retryAttempts: 2,
+      // Configure Chat Agent to use Ollama
+      llmProvider: 'ollama',
       ...customConfig
     };
 
@@ -591,6 +596,8 @@ export class UnifiedAgent {
       parallelProcessing: true,
       autoFallback: true,
       retryAttempts: 3,
+      // Configure Analysis Agent to use DeepSeek (for research-related analysis)
+      llmProvider: 'deepseek',
       ...customConfig
     };
 

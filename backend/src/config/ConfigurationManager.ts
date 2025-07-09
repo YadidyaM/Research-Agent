@@ -14,7 +14,7 @@ export interface DatabaseConfig {
 }
 
 export interface LLMConfig {
-  provider: 'deepseek' | 'openai' | 'huggingface';
+  provider: 'deepseek' | 'openai' | 'huggingface' | 'ollama';
   endpoint?: string;
   apiKey?: string;
   model: string;
@@ -119,8 +119,8 @@ export class ConfigurationManager {
         }
       },
       llm: {
-        provider: config.llm.provider as 'deepseek' | 'openai' | 'huggingface',
-        endpoint: config.llm.deepseekBaseUrl,
+        provider: config.llm.provider as 'deepseek' | 'openai' | 'huggingface' | 'ollama',
+        endpoint: this.getLLMEndpoint(),
         apiKey: this.getLLMApiKey(),
         model: this.getLLMModel(),
         temperature: 0.1,
@@ -180,6 +180,17 @@ export class ConfigurationManager {
     };
   }
 
+  private getLLMEndpoint(): string | undefined {
+    switch (config.llm.provider) {
+      case 'deepseek':
+        return config.llm.deepseekBaseUrl;
+      case 'ollama':
+        return config.llm.ollamaEndpoint;
+      default:
+        return undefined;
+    }
+  }
+
   private getLLMApiKey(): string | undefined {
     switch (config.llm.provider) {
       case 'deepseek':
@@ -188,6 +199,8 @@ export class ConfigurationManager {
         return config.llm.openaiApiKey;
       case 'huggingface':
         return config.llm.huggingfaceApiKey;
+      case 'ollama':
+        return undefined; // Ollama typically doesn't require API key
       default:
         return undefined;
     }
@@ -197,6 +210,8 @@ export class ConfigurationManager {
     switch (config.llm.provider) {
       case 'deepseek':
         return config.llm.deepseekModel || 'deepseek-reasoner';
+      case 'ollama':
+        return config.llm.ollamaModel || 'llama2';
       case 'openai':
         return config.llm.openaiModel || 'gpt-3.5-turbo';
       case 'huggingface':

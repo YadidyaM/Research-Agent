@@ -73,7 +73,9 @@ export class AgentOrchestrator {
         temperature: 0.1,
         maxIterations: 15,
         enableMemory: true,
-        enableProgress: true
+        enableProgress: true,
+        // Explicitly ensure DeepSeek configuration
+        llmProvider: 'deepseek',
       }),
       capabilities: [
         {
@@ -89,6 +91,27 @@ export class AgentOrchestrator {
           domains: ['verification', 'validation'],
           complexity: 'medium',
           priority: 2
+        },
+        {
+          name: 'image_analysis_research',
+          description: 'Analyze images and provide research insights',
+          domains: ['images', 'vision', 'research'],
+          complexity: 'medium',
+          priority: 3
+        },
+        {
+          name: 'image_generation_research',
+          description: 'Generate images for research purposes',
+          domains: ['images', 'generation', 'research'],
+          complexity: 'medium',
+          priority: 4
+        },
+        {
+          name: 'image_editing_research',
+          description: 'Basic image editing for research',
+          domains: ['images', 'editing', 'research'],
+          complexity: 'medium',
+          priority: 5
         }
       ],
       performance: this.createDefaultPerformance(),
@@ -198,23 +221,44 @@ export class AgentOrchestrator {
       agent: UnifiedAgent.createChatAgent({
         temperature: 0.6,
         maxIterations: 5,
-        enableMemory: true,
-        enableProgress: false
+        // Explicitly ensure Ollama configuration
+        llmProvider: 'ollama',
       }),
       capabilities: [
         {
-          name: 'natural_dialogue',
-          description: 'Engage in natural conversation',
-          domains: ['conversation', 'qa', 'support'],
+          name: 'natural_conversation',
+          description: 'Natural dialogue and casual conversations',
+          domains: ['chat', 'questions', 'general'],
           complexity: 'simple',
           priority: 1
         },
         {
           name: 'quick_answers',
-          description: 'Provide quick factual answers',
-          domains: ['facts', 'definitions', 'explanations'],
+          description: 'Fast responses to simple questions',
+          domains: ['qa', 'help', 'explanation'],
           complexity: 'simple',
           priority: 2
+        },
+        {
+          name: 'image_analysis_chat',
+          description: 'Analyze images and provide casual descriptions',
+          domains: ['images', 'vision', 'description'],
+          complexity: 'simple',
+          priority: 3
+        },
+        {
+          name: 'image_generation_chat',
+          description: 'Generate images for fun and creativity',
+          domains: ['images', 'generation', 'creative'],
+          complexity: 'simple',
+          priority: 4
+        },
+        {
+          name: 'image_editing_chat',
+          description: 'Basic image editing and enhancement',
+          domains: ['images', 'editing', 'enhancement'],
+          complexity: 'simple',
+          priority: 5
         }
       ],
       performance: this.createDefaultPerformance(),

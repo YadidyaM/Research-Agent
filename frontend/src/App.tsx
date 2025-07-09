@@ -1,6 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import ReactMarkdown from 'react-markdown';
+import { useAuth0 } from '@auth0/auth0-react';
+import { useVoiceInput, useVoiceCommands } from './hooks/useVoiceInput';
+import { useVoiceOutput, useVoiceSettings } from './hooks/useVoiceOutput';
+import { 
+  VoiceButton, 
+  VoiceWaveform, 
+  VoiceStatus, 
+  VoiceSettings, 
+  FloatingVoiceButton 
+} from './components/VoiceComponents';
+import { AuthenticationButton, UserProfile } from './components/AuthButton';
+import TrialSystem from './components/TrialSystem';
+import API_CONFIG from './config/api';
 
 // Layout
 const AppContainer = styled.div`
@@ -85,6 +98,12 @@ const Header = styled.header`
   align-items: center;
   justify-content: space-between;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+`;
+
+const HeaderControls = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 16px;
 `;
 
 const Title = styled.h1`
@@ -195,6 +214,15 @@ const UserMessage = styled.div`
 const AIMessage = styled.div`
   font-size: 16px;
   color: #333333;
+`;
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const MessageVoiceControls = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 4px 0;
 `;
 
 
@@ -446,6 +474,58 @@ const SendButton = styled.button`
     background: #d1d5db;
     cursor: not-allowed;
   }
+`;
+
+const VoiceStatusContainer = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 16px;
+  margin-top: 8px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+`;
+
+const VoiceCommandsHelp = styled.div`
+  font-size: 12px;
+  color: #6b7280;
+  text-align: center;
+  padding: 4px 8px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+`;
+
+const VoiceSettingsPanel = styled.div`
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 400px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  max-height: 80vh;
+  overflow-y: auto;
+`;
+
+const VoiceSettingsPanelHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid #e5e7eb;
+`;
+
+const VoiceSettingsTitle = styled.h3`
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
 `;
 
 // Loading
@@ -1088,6 +1168,7 @@ const AgentToggleButton = styled.button`
 `;
 
 function App() {
+  const { isAuthenticated, isLoading: authLoading, getAccessTokenSilently } = useAuth0();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1098,7 +1179,78 @@ function App() {
   const [orchestratorMetrics, setOrchestratorMetrics] = useState<OrchestratorMetrics | null>(null);
   const [showAgentPanel, setShowAgentPanel] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Voice settings
+  const { settings: voiceSettings, updateSettings: updateVoiceSettings } = useVoiceSettings();
+
+  // Voice commands
+  const voiceCommands = {
+    'start research': () => setMode('research'),
+    'switch to chat': () => setMode('chat'),
+    'clear history': () => clearThreadHistory(),
+    'open settings': () => setShowVoiceSettings(true),
+    'close settings': () => setShowVoiceSettings(false),
+  };
+
+  const { processTranscript } = useVoiceCommands(voiceCommands);
+
+  // Voice input
+  const {
+    isRecording,
+    isSupported: isVoiceInputSupported,
+    transcript, // eslint-disable-line @typescript-eslint/no-unused-vars
+    interimTranscript,
+    error: voiceInputError,
+    startRecording,
+    stopRecording,
+    resetTranscript
+  } = useVoiceInput({
+    onTranscript: (text, isFinal) => {
+      if (isFinal) {
+        // Check if text contains any voice commands
+        const normalizedText = text.toLowerCase().trim();
+        const hasCommand = Object.keys(voiceCommands).some(command => 
+          normalizedText.includes(command.toLowerCase())
+        );
+        
+        if (hasCommand) {
+          // Process voice command
+          processTranscript(text, true);
+        } else {
+          // If not a command, set as input
+          setInput(prev => prev + text + ' ');
+        }
+        resetTranscript();
+      } else {
+        // Show interim results in input
+        setInput(prev => prev + text);
+      }
+    },
+    onError: (error) => {
+      console.error('Voice input error:', error);
+    }
+  });
+
+  // Voice output
+  const {
+    isSpeaking, // eslint-disable-line @typescript-eslint/no-unused-vars
+    isPaused, // eslint-disable-line @typescript-eslint/no-unused-vars
+    isSupported: isVoiceOutputSupported,
+    voices,
+    currentVoice,
+    speak,
+    pause, // eslint-disable-line @typescript-eslint/no-unused-vars
+    resume, // eslint-disable-line @typescript-eslint/no-unused-vars
+    stop: stopSpeaking, // eslint-disable-line @typescript-eslint/no-unused-vars
+    setVoice,
+  } = useVoiceOutput({
+    rate: voiceSettings.rate,
+    pitch: voiceSettings.pitch,
+    volume: voiceSettings.volume,
+    lang: voiceSettings.language,
+  });
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1107,6 +1259,19 @@ function App() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Auto-speak new assistant messages if enabled
+  useEffect(() => {
+    if (voiceSettings.autoRead && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.type === 'assistant' && lastMessage.content && !loading) {
+        // Small delay to ensure message is rendered
+        setTimeout(() => {
+          speak(lastMessage.content);
+        }, 500);
+      }
+    }
+  }, [messages, voiceSettings.autoRead, speak, loading]);
 
   useEffect(() => {
     // Load agent information on startup
@@ -1117,9 +1282,10 @@ function App() {
 
   const loadAgentData = async () => {
     try {
+      const baseUrl = API_CONFIG.getBaseUrl();
       const [agentsResponse, metricsResponse] = await Promise.all([
-        fetch('/api/orchestrator/agents'),
-        fetch('/api/orchestrator/metrics')
+        fetch(`${baseUrl}/api/orchestrator/agents`),
+        fetch(`${baseUrl}/api/orchestrator/metrics`)
       ]);
 
       if (agentsResponse.ok) {
@@ -1139,7 +1305,8 @@ function App() {
   const toggleAgent = async (agentId: string, activate: boolean) => {
     try {
       const action = activate ? 'activate' : 'deactivate';
-      const response = await fetch(`/api/orchestrator/agents/${agentId}/${action}`, {
+      const baseUrl = API_CONFIG.getBaseUrl();
+      const response = await fetch(`${baseUrl}/api/orchestrator/agents/${agentId}/${action}`, {
         method: 'POST'
       });
 
@@ -1365,11 +1532,24 @@ function App() {
       const optimalLimit = getOptimalContextWindow(currentMessages);
       const conversationContext = getConversationContext(currentMessages, optimalLimit);
       
-      const response = await fetch('/api/chat', {
+      const baseUrl = API_CONFIG.getBaseUrl();
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Add authentication header if user is authenticated
+      if (isAuthenticated) {
+        try {
+          const token = await getAccessTokenSilently();
+          headers['Authorization'] = `Bearer ${token}`;
+        } catch (error) {
+          console.error('Error getting access token:', error);
+        }
+      }
+      
+      const response = await fetch(`${baseUrl}/api/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({ 
           message: query,
           context: conversationContext,
@@ -1414,11 +1594,24 @@ function App() {
       const optimalLimit = getOptimalContextWindow(currentMessages);
       const conversationContext = getConversationContext(currentMessages, optimalLimit);
       
-      const response = await fetch('/api/research', {
+      const baseUrl = API_CONFIG.getBaseUrl();
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Add authentication header if user is authenticated
+      if (isAuthenticated) {
+        try {
+          const token = await getAccessTokenSilently();
+          headers['Authorization'] = `Bearer ${token}`;
+        } catch (error) {
+          console.error('Error getting access token:', error);
+        }
+      }
+      
+      const response = await fetch(`${baseUrl}/api/research`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({ 
           query: query,
           context: conversationContext,
@@ -1729,23 +1922,40 @@ function App() {
       <MainContent>
         <Header>
           <Title>AI Research Agent</Title>
-          <ModeToggle>
-            <ModeButton 
-              active={mode === 'chat'} 
-              onClick={() => setMode('chat')}
-            >
-              Chat
-            </ModeButton>
-            <ModeButton 
-              active={mode === 'research'} 
-              onClick={() => setMode('research')}
-            >
-              Research
-            </ModeButton>
-          </ModeToggle>
+          <HeaderControls>
+            <ModeToggle>
+              <ModeButton 
+                active={mode === 'chat'} 
+                onClick={() => setMode('chat')}
+              >
+                Chat
+              </ModeButton>
+              <ModeButton 
+                active={mode === 'research'} 
+                onClick={() => setMode('research')}
+              >
+                Research
+              </ModeButton>
+            </ModeToggle>
+            <UserProfile />
+            <AuthenticationButton />
+            
+            {/* Voice Settings Button */}
+            {isVoiceOutputSupported && (
+              <VoiceButton
+                size="small"
+                variant="minimal"
+                onClick={() => setShowVoiceSettings(true)}
+                title="Voice Settings"
+              >
+                🎛️
+              </VoiceButton>
+            )}
+          </HeaderControls>
         </Header>
         
         <ChatContainer>
+          <TrialSystem />
           <MessagesContainer>
             {messages.map((message) => (
               <MessageWrapper key={message.id} id={`message-${message.id}`} isUser={message.type === 'user'}>
@@ -1760,6 +1970,8 @@ function App() {
                       </UserMessage>
                     ) : (
                       <AIMessage>
+
+
                         {message.content && (
                           <MarkdownContent>
                             <ReactMarkdown>{message.content}</ReactMarkdown>
@@ -1888,16 +2100,54 @@ function App() {
                 <InputWrapper>
                   <Input
                     placeholder={getPlaceholder()}
-                    value={input}
+                    value={input + (interimTranscript ? ` ${interimTranscript}` : '')}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyPress={handleKeyPress}
                     disabled={loading}
                     rows={1}
                   />
+                  
+                  {/* Voice Input Controls */}
+                  {isVoiceInputSupported && (
+                    <VoiceButton
+                      isRecording={isRecording}
+                      onClick={isRecording ? stopRecording : startRecording}
+                      disabled={loading}
+                      size="medium"
+                      title={isRecording ? 'Stop voice input' : 'Start voice input'}
+                    />
+                  )}
+                  
                   <SendButton type="submit" disabled={loading || !input.trim()}>
                     {loading ? 'Sending...' : 'Send'}
                   </SendButton>
                 </InputWrapper>
+                
+                {/* Voice Status */}
+                {(isRecording || voiceInputError || isVoiceInputSupported) && (
+                  <VoiceStatusContainer>
+                    {isRecording && (
+                      <VoiceStatus 
+                        status="listening" 
+                        message="Listening... Try saying 'start research' or 'switch to chat'"
+                      />
+                    )}
+                    {voiceInputError && (
+                      <VoiceStatus 
+                        status="error" 
+                        message={voiceInputError}
+                      />
+                    )}
+                    {isRecording && <VoiceWaveform isActive={isRecording} />}
+                    
+                    {/* Voice Commands Help */}
+                    {!isRecording && isVoiceInputSupported && (
+                      <VoiceCommandsHelp>
+                        <strong>Voice Commands:</strong> "start research", "switch to chat", "clear history"
+                      </VoiceCommandsHelp>
+                    )}
+                  </VoiceStatusContainer>
+                )}
               </InputContainer>
             </form>
           </InputSection>
@@ -1910,10 +2160,45 @@ function App() {
           </a>
           {' & '}
           <a href="https://www.linkedin.com/in/monicajayakumar/" target="_blank" rel="noopener noreferrer">
-            Monia Jayakumar
+            Monica Jayakumar
           </a>
         </Footer>
       </MainContent>
+
+      {/* Floating Voice Button for Mobile */}
+      {isVoiceInputSupported && (
+        <FloatingVoiceButton
+          isRecording={isRecording}
+          onClick={isRecording ? stopRecording : startRecording}
+          disabled={loading}
+        />
+      )}
+
+      {/* Voice Settings Panel */}
+      {showVoiceSettings && isVoiceOutputSupported && (
+        <VoiceSettingsPanel>
+          <VoiceSettingsPanelHeader>
+            <VoiceSettingsTitle>Voice Settings</VoiceSettingsTitle>
+            <CloseButton onClick={() => setShowVoiceSettings(false)}>
+              ✕
+            </CloseButton>
+          </VoiceSettingsPanelHeader>
+          <VoiceSettings
+            voices={voices}
+            selectedVoice={currentVoice}
+            rate={voiceSettings.rate}
+            pitch={voiceSettings.pitch}
+            volume={voiceSettings.volume}
+            onVoiceChange={(voice: SpeechSynthesisVoice | null) => {
+              setVoice(voice);
+              updateVoiceSettings({ preferredVoice: voice?.name || null });
+            }}
+            onRateChange={(rate: number) => updateVoiceSettings({ rate })}
+            onPitchChange={(pitch: number) => updateVoiceSettings({ pitch })}
+            onVolumeChange={(volume: number) => updateVoiceSettings({ volume })}
+          />
+        </VoiceSettingsPanel>
+      )}
     </AppContainer>
   );
 }

@@ -1,11 +1,11 @@
-import { ChromaApi, Collection, Where } from 'chromadb';
+import { ChromaApi, Collection, Where, ChromaClient } from 'chromadb';
 import { IVectorRepository } from '../interfaces/repositories/IVectorRepository';
 import { MemoryChunk, VectorSearchResult } from '../types';
 import { ConfigurationManager } from '../config/ConfigurationManager';
 import { v4 as uuidv4 } from 'uuid';
 
 export class ChromaVectorRepository implements IVectorRepository {
-  private client: ChromaApi | null = null;
+  private client: ChromaClient | null = null;
   private collection: Collection | null = null;
   private initialized: boolean = false;
   private configManager: ConfigurationManager;
@@ -17,11 +17,10 @@ export class ChromaVectorRepository implements IVectorRepository {
   async initialize(): Promise<void> {
     try {
       const config = this.configManager.getDatabaseConfig();
-      const { ChromaApi } = await import('chromadb');
       
-      this.client = new ChromaApi({
-        path: config.vectorDb.endpoint,
-        timeout: config.vectorDb.timeout
+      // Create client using the correct constructor for chromadb 1.8.1
+      this.client = new ChromaClient({
+        path: config.vectorDb.endpoint
       });
 
       this.collection = await this.client.getOrCreateCollection({

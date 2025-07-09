@@ -2,7 +2,7 @@ import { LLMProvider } from '../types';
 import { HfInference } from '@huggingface/inference';
 import axios from 'axios';
 import { PROMPT_TEMPLATES, PROMPT_CONFIG } from '../config/prompts';
-import { ILLMService, LLMGenerationOptions, ChatMessage, SourceCredibilityResult } from '../interfaces/services/ILLMService';
+import { ILLMService, LLMGenerationOptions, ChatMessage, SourceCredibilityResult, StreamingOptions, StreamChunk } from '../interfaces/services/ILLMService';
 import { ConfigurationManager, LLMConfig } from '../config/ConfigurationManager';
 
 export class LLMService implements ILLMService {
@@ -33,6 +33,8 @@ export class LLMService implements ILLMService {
         return this.generateWithOpenAI(prompt, options);
       case 'huggingface':
         return this.generateWithHuggingFace(prompt, options);
+      case 'ollama':
+        return this.generateWithOllama(prompt, options);
       default:
         throw new Error(`Unsupported LLM provider: ${this.config.provider}`);
     }
@@ -120,6 +122,38 @@ export class LLMService implements ILLMService {
     }
 
     return response.data.choices[0].message.content;
+  }
+
+  private async generateWithOllama(prompt: string, options: LLMGenerationOptions): Promise<string> {
+    const endpoint = this.config.endpoint || 'http://localhost:11434';
+    
+    const payload = {
+      model: this.config.model,
+      prompt: prompt,
+      stream: false,
+      options: {
+        temperature: options.temperature ?? 0.7,
+        num_predict: options.maxTokens || 1000,
+      },
+      ...(options.system && { system: options.system }),
+    };
+
+    const response = await axios.post(
+      `${endpoint}/api/generate`,
+      payload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: 60000,
+      }
+    );
+
+    if (!response.data.response) {
+      throw new Error('No response from Ollama');
+    }
+
+    return response.data.response;
   }
 
   async createChatCompletion(messages: ChatMessage[], options: {
@@ -249,6 +283,389 @@ export class LLMService implements ILLMService {
     // Reinitialize HuggingFace client if needed
     if (this.config.provider === 'huggingface' && this.config.apiKey) {
       this.hfClient = new HfInference(this.config.apiKey);
+    }
+  }
+
+  // NEW: Streaming methods
+  async* generateTextStream(prompt: string, options: LLMGenerationOptions & StreamingOptions = {}): AsyncGenerator<StreamChunk, void, unknown> {
+    const { onToken, onComplete, onError, ...llmOptions } = options;
+    
+    try {
+      // Implementation will vary based on provider
+      switch (this.config.provider) {
+        case 'deepseek':
+          yield* this.generateStreamWithDeepSeek(prompt, llmOptions, { onToken, onComplete, onError });
+          break;
+        case 'openai':
+          yield* this.generateStreamWithOpenAI(prompt, llmOptions, { onToken, onComplete, onError });
+          break;
+        case 'huggingface':
+          yield* this.generateStreamWithHuggingFace(prompt, llmOptions, { onToken, onComplete, onError });
+          break;
+        case 'ollama':
+          yield* this.generateStreamWithOllama(prompt, llmOptions, { onToken, onComplete, onError });
+          break;
+        default:
+          throw new Error(`Unsupported LLM provider for streaming: ${this.config.provider}`);
+      }
+    } catch (error) {
+      if (onError) {
+        onError(error as Error);
+      }
+      throw error;
+    }
+  }
+
+  async* createChatCompletionStream(messages: ChatMessage[], options: {
+    maxTokens?: number;
+    temperature?: number;
+  } & StreamingOptions = {}): AsyncGenerator<StreamChunk, void, unknown> {
+    // Convert messages to a single prompt for streaming
+    const prompt = messages
+      .map(msg => `${msg.role}: ${msg.content}`)
+      .join('\n');
+
+    yield* this.generateTextStream(prompt, options);
+  }
+
+  // Private streaming implementations
+  private async* generateStreamWithOpenAI(prompt: string, options: LLMGenerationOptions, streamingOptions: StreamingOptions): AsyncGenerator<StreamChunk, void, unknown> {
+    const messages = [];
+    if (options.system) {
+      messages.push({ role: 'system', content: options.system });
+    }
+    messages.push({ role: 'user', content: prompt });
+
+    const payload = {
+      model: this.config.model,
+      messages: messages,
+      max_tokens: options.maxTokens,
+      temperature: options.temperature ?? 0.7,
+      stream: true
+    };
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.statusText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Failed to get response reader');
+    }
+
+    const decoder = new TextDecoder();
+    let fullContent = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              if (streamingOptions.onComplete) {
+                streamingOptions.onComplete(fullContent);
+              }
+              return;
+            }
+
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices?.[0]?.delta?.content || '';
+              
+              if (content) {
+                fullContent += content;
+                
+                if (streamingOptions.onToken) {
+                  streamingOptions.onToken(content);
+                }
+
+                const streamChunk: StreamChunk = {
+                  id: parsed.id || 'stream',
+                  content: fullContent,
+                  done: false,
+                  timestamp: new Date(),
+                  role: 'assistant'
+                };
+
+                yield streamChunk;
+              }
+            } catch (error) {
+              console.warn('Failed to parse stream chunk:', error);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Final chunk
+    const finalChunk: StreamChunk = {
+      id: 'final',
+      content: fullContent,
+      done: true,
+      timestamp: new Date(),
+      role: 'assistant'
+    };
+
+    yield finalChunk;
+  }
+
+  private async* generateStreamWithDeepSeek(prompt: string, options: LLMGenerationOptions, streamingOptions: StreamingOptions): AsyncGenerator<StreamChunk, void, unknown> {
+    const messages = [];
+    if (options.system) {
+      messages.push({ role: 'system', content: options.system });
+    }
+    messages.push({ role: 'user', content: prompt });
+
+    const payload = {
+      model: this.config.model,
+      messages: messages,
+      max_tokens: options.maxTokens,
+      temperature: options.temperature ?? 0.7,
+      stream: true
+    };
+
+    const response = await fetch(`${this.config.endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`DeepSeek API error: ${response.statusText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Failed to get response reader');
+    }
+
+    const decoder = new TextDecoder();
+    let fullContent = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              if (streamingOptions.onComplete) {
+                streamingOptions.onComplete(fullContent);
+              }
+              return;
+            }
+
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices?.[0]?.delta?.content || '';
+              
+              if (content) {
+                fullContent += content;
+                
+                if (streamingOptions.onToken) {
+                  streamingOptions.onToken(content);
+                }
+
+                const streamChunk: StreamChunk = {
+                  id: parsed.id || 'stream',
+                  content: fullContent,
+                  done: false,
+                  timestamp: new Date(),
+                  role: 'assistant'
+                };
+
+                yield streamChunk;
+              }
+            } catch (error) {
+              console.warn('Failed to parse stream chunk:', error);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Final chunk
+    const finalChunk: StreamChunk = {
+      id: 'final',
+      content: fullContent,
+      done: true,
+      timestamp: new Date(),
+      role: 'assistant'
+    };
+
+    yield finalChunk;
+  }
+
+  private async* generateStreamWithHuggingFace(prompt: string, options: LLMGenerationOptions, streamingOptions: StreamingOptions): AsyncGenerator<StreamChunk, void, unknown> {
+    // HuggingFace Inference API doesn't support streaming in the same way
+    // So we'll simulate streaming by generating the full response and chunking it
+    
+    if (!this.hfClient) {
+      throw new Error('HuggingFace client not initialized');
+    }
+
+    const response = await this.hfClient.textGeneration({
+      model: this.config.model,
+      inputs: prompt,
+      parameters: {
+        max_new_tokens: options.maxTokens,
+        temperature: options.temperature ?? 0.7,
+        return_full_text: false,
+      },
+    });
+
+    const fullText = response.generated_text;
+    const words = fullText.split(' ');
+    let currentContent = '';
+
+    for (let i = 0; i < words.length; i++) {
+      currentContent += (i > 0 ? ' ' : '') + words[i];
+      
+      if (streamingOptions.onToken) {
+        streamingOptions.onToken(words[i] + (i < words.length - 1 ? ' ' : ''));
+      }
+
+      const streamChunk: StreamChunk = {
+        id: `chunk-${i}`,
+        content: currentContent,
+        done: i === words.length - 1,
+        timestamp: new Date(),
+        role: 'assistant'
+      };
+
+      yield streamChunk;
+
+      // Small delay to simulate streaming
+      if (i < words.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+
+    if (streamingOptions.onComplete) {
+      streamingOptions.onComplete(fullText);
+    }
+  }
+
+  private async* generateStreamWithOllama(prompt: string, options: LLMGenerationOptions, streamingOptions: StreamingOptions): AsyncGenerator<StreamChunk, void, unknown> {
+    const endpoint = this.config.endpoint || 'http://localhost:11434';
+    
+    const payload = {
+      model: this.config.model,
+      prompt: prompt,
+      stream: true,
+      options: {
+        temperature: options.temperature ?? 0.7,
+        num_predict: options.maxTokens || 1000,
+      },
+      ...(options.system && { system: options.system }),
+    };
+
+    const response = await fetch(`${endpoint}/api/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama API error: ${response.statusText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Failed to get response reader');
+    }
+
+    const decoder = new TextDecoder();
+    let fullContent = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+            const content = parsed.response || '';
+            
+            if (content) {
+              fullContent += content;
+              
+              if (streamingOptions.onToken) {
+                streamingOptions.onToken(content);
+              }
+
+              const streamChunk: StreamChunk = {
+                id: parsed.id || 'ollama-stream',
+                content: fullContent,
+                done: parsed.done || false,
+                timestamp: new Date(),
+                role: 'assistant'
+              };
+
+              yield streamChunk;
+
+              if (parsed.done) {
+                if (streamingOptions.onComplete) {
+                  streamingOptions.onComplete(fullContent);
+                }
+                return;
+              }
+            }
+          } catch (error) {
+            console.warn('Failed to parse Ollama stream chunk:', error);
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Final chunk if we didn't get a "done" signal
+    const finalChunk: StreamChunk = {
+      id: 'final',
+      content: fullContent,
+      done: true,
+      timestamp: new Date(),
+      role: 'assistant'
+    };
+
+    yield finalChunk;
+
+    if (streamingOptions.onComplete) {
+      streamingOptions.onComplete(fullContent);
     }
   }
 } 

@@ -7,17 +7,22 @@ export const config = {
   port: process.env.PORT || 3001,
   nodeEnv: process.env.NODE_ENV || 'development',
   
-  // LLM Configuration - DeepSeek focused
+  // LLM Configuration - Multi-provider support
   llm: {
     provider: process.env.LLM_PROVIDER || 'deepseek',
     // DeepSeek Configuration
     deepseekApiKey: process.env.DEEPSEEK_API_KEY,
     deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
     deepseekModel: process.env.DEEPSEEK_MODEL || 'deepseek-reasoner',
-    // Keep OpenAI and HuggingFace as fallback options
+    // OpenAI Configuration
     openaiApiKey: process.env.OPENAI_API_KEY,
     openaiModel: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
+    // HuggingFace Configuration
     huggingfaceApiKey: process.env.HUGGINGFACE_API_KEY,
+    // Ollama Configuration
+    ollamaEndpoint: process.env.OLLAMA_ENDPOINT || 'http://localhost:11434',
+    ollamaModel: process.env.OLLAMA_MODEL || 'llama2',
+    ollamaHost: process.env.OLLAMA_HOST || 'localhost:11434',
   },
   
   // Vector Database Configuration
@@ -51,6 +56,11 @@ export const config = {
       language: process.env.WIKIPEDIA_LANGUAGE || 'en',
       timeout: parseInt(process.env.WIKIPEDIA_TIMEOUT || '30000'),
       userAgent: process.env.WIKIPEDIA_USER_AGENT || 'AI-Research-Agent/1.0 (research-agent@example.com)',
+    },
+    nasa: {
+      apiKey: process.env.NASA_API_KEY,
+      timeout: parseInt(process.env.NASA_TIMEOUT || '30000'),
+      userAgent: process.env.NASA_USER_AGENT || 'AI-Research-Agent/1.0',
     },
   },
   
@@ -88,15 +98,29 @@ export const getAgentConfig = (): AgentConfig => {
   const getApiKey = () => {
     if (config.llm.provider === 'openai') return config.llm.openaiApiKey;
     if (config.llm.provider === 'deepseek') return config.llm.deepseekApiKey;
+    if (config.llm.provider === 'ollama') return undefined; // Ollama typically doesn't need API key
     return config.llm.huggingfaceApiKey;
+  };
+
+  const getEndpoint = () => {
+    if (config.llm.provider === 'deepseek') return config.llm.deepseekBaseUrl;
+    if (config.llm.provider === 'ollama') return config.llm.ollamaEndpoint;
+    return undefined;
+  };
+
+  const getModel = () => {
+    if (config.llm.provider === 'deepseek') return config.llm.deepseekModel;
+    if (config.llm.provider === 'openai') return config.llm.openaiModel;
+    if (config.llm.provider === 'ollama') return config.llm.ollamaModel;
+    return config.llm.openaiModel; // fallback
   };
 
   return {
     llmProvider: {
       name: config.llm.provider,
-      ...(config.llm.provider === 'deepseek' && config.llm.deepseekBaseUrl && { endpoint: config.llm.deepseekBaseUrl }),
+      ...(getEndpoint() && { endpoint: getEndpoint() }),
       ...(getApiKey() && { apiKey: getApiKey() }),
-      model: config.llm.provider === 'deepseek' ? config.llm.deepseekModel : config.llm.openaiModel,
+      model: getModel(),
     },
     vectorDb: {
       type: config.vectorDb.type as 'chroma' | 'faiss',
@@ -124,6 +148,11 @@ export const getAgentConfig = (): AgentConfig => {
         language: config.tools.wikipedia.language,
         timeout: config.tools.wikipedia.timeout,
         userAgent: config.tools.wikipedia.userAgent,
+      },
+      nasa: {
+        ...(config.tools.nasa.apiKey && { apiKey: config.tools.nasa.apiKey }),
+        timeout: config.tools.nasa.timeout,
+        userAgent: config.tools.nasa.userAgent,
       },
     },
     embedding: {

@@ -9,6 +9,11 @@ export interface AgentConfig {
   enableMemory: boolean;
   enableProgress: boolean;
   parallelProcessing: boolean;
+  // LLM Provider Configuration
+  llmProvider?: 'ollama' | 'deepseek' | 'openai' | 'huggingface';
+  llmEndpoint?: string;
+  llmModel?: string;
+  llmApiKey?: string;
 }
 
 export interface ExecutionContext {

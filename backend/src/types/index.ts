@@ -100,6 +100,11 @@ export interface AgentConfig {
       timeout: number;
       userAgent: string;
     };
+    nasa: {
+      apiKey?: string | undefined;
+      timeout: number;
+      userAgent: string;
+    };
   };
   embedding: {
     provider: 'huggingface' | 'openai';

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@auth0/auth0-react": "^2.3.0",
+    "@stripe/react-stripe-js": "^3.7.0",
+    "@stripe/stripe-js": "^7.4.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
@@ -27,15 +30,14 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
-  "proxy": "http://localhost:3001",
-  "author": "Yadidya Medepalli <https://www.linkedin.com/in/yadidya-medepalli/>, Monia Jayakumar <https://www.linkedin.com/in/monicajayakumar/>",
+  "author": "Yadidya Medepalli <https://www.linkedin.com/in/yadidya-medepalli/>, Monica Jayakumar <https://www.linkedin.com/in/monicajayakumar/>",
   "contributors": [
     {
       "name": "Yadidya Medepalli",
       "url": "https://github.com/YadidyaM"
     },
     {
-      "name": "Monia Jayakumar",
+      "name": "Monica Jayakumar",
       "url": "https://github.com/Monica2403"
     }
   ],

@@ -1,0 +1,41 @@
+[build]
+  # Build command
+  command = "npm run build"
+  
+  # Directory to publish
+  publish = "build"
+  
+  # Environment variables for build
+  environment = { 
+    REACT_APP_API_URL = "https://research-agent-backend-v1-3d17a0323ece.herokuapp.com",
+    REACT_APP_AUTH0_DOMAIN = "dev-mbx0yp0t5y40m5o8.us.auth0.com",
+    REACT_APP_AUTH0_CLIENT_ID = "z4lwhgtUsbTcw0CZtSLKfSSNkYSJdXa0",
+    REACT_APP_AUTH0_AUDIENCE = "https://research-agent-backend-v1-3d17a0323ece.herokuapp.com/api",
+    REACT_APP_AUTH0_REDIRECT_URI = "https://spontaneous-dango-14d9ca.netlify.app/",
+    REACT_APP_STRIPE_PUBLISHABLE_KEY = "pk_test_51R1TdTQe524AtcAShl9O8pwPRSraSyWYKR7owR0eNuUCSBV8Cf7vFrns4nKmZ8ai09Y21T10qLDY23uIxe0EXRws005Bx21csM"
+  }
+
+[build.environment]
+  NODE_VERSION = "18"
+  NPM_VERSION = "9"
+
+# Redirect rules for SPA
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Headers for security
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Headers for static assets
+[[headers]]
+  for = "/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable" 
